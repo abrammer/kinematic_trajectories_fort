@@ -1,1 +1,3 @@
-# This is my README
+README for trajectory program
+
+
