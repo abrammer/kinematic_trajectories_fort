@@ -15,29 +15,29 @@
     character (len = *), parameter :: FILE_NAME = "/free4/abrammer/WRFOUT/10d50km/wrfout_d01_2010-07-05_00:00:00"
     character (len = 25)  lat_name, lon_name, lev_name, tim_name, var_name
     real, dimension(:), allocatable :: lat, lon, lev, time
-    integer ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts
+    integer ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it
     integer, dimension(nf90_max_var_dims) :: dimIds
     real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
 	real start_time, start_lon, start_lat, start_lev
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!! External Functions    
+!!!!!!! External Functions
     real bicubic_interp, neville_interp
-    
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!  Lets get Rolling.     
-    
+!!!!!!!  Lets get Rolling.
+
     type wind
     	real :: val1, val2, val
-    	real, dimension(:), allocatable :: lat 
-    	real, dimension(:), allocatable :: lon 
-    	real, dimension(:), allocatable :: lev 
+    	real, dimension(:), allocatable :: lat
+    	real, dimension(:), allocatable :: lon
+    	real, dimension(:), allocatable :: lev
     	character (len = 25):: units, name
     	integer :: id, y_stag
     end type wind
     type (wind) u
     type (wind) v
     type (wind) w
-    
+
     call check( nf90_open(FILE_NAME, NF90_NOWRITE, ncid) )
 
     var_name = "XTIME"
@@ -50,7 +50,7 @@
 
 !    ***********************************
 !    define dimensions
-	
+
 	u%name = "U"
 	call define_coords(u)
 	print*, size(u%lon), size(u%lat),u%y_stag
@@ -68,37 +68,107 @@
 	print*, size(w%lon), size(w%lat), w%y_stag
 	print*, maxval(w%lon), maxval(w%lat)
 	print*, minval(w%lon), minval(w%lat)
-	
+
 
 !    ***********************************
 !   starting point
 
-    start_time = 190.
+    start_time = 170.
     start_lon = -65.3
     start_lat = 15.2
     start_lev = 154317.0
 
-		print*, coord_2_int(time, start_time)
-	loni =  coord_2_int(v%lon, start_lon)
-		print*, v%lon(loni(2))+ loni(1)*loni(3)
-	loni =  coord_2_int(u%lon, start_lon)
-		print*, u%lon(loni(2))+ loni(1)*loni(3)
-
-!	call get_levels(ncid, u,v,w, start_time, start_lat, start_lon)
-	
-	start_lon = -67.3
-    start_lat = 15.2
-!	call get_levels(ncid, u,v,w, start_time, start_lat, start_lon)
-
 	call get5dval(ncid, u,v,w, start_time, start_lev, start_lat, start_lon)
-	print*, u%val1	
+	print*, u%val1
 	print*, v%val1
 	print*, w%val1
 
+    print*, start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
+    do it=0, 10
+    call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
+    print*, start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
+    end do
 
-	
+
+
 	contains
-	
+
+	REAL function torad(val)
+	REAL, PARAMETER :: pi = 3.14159265358979  ! pi
+	real val
+    torad = val* pi/180.
+    end function torad
+
+    REAL function todeg(val)
+	REAL, PARAMETER :: pi = 3.14159265358979  ! pi
+	real val
+    todeg = val* 180./pi
+    end function todeg
+
+
+	real function move_parcel(u,v,w,lev_in, lat_in, lon_in)
+	real u,v,w
+	REAL, PARAMETER :: pi = 3.14159265358979  ! pi
+    REAL, PARAMETER :: radius = 6371220.0     ! Earth radius (m)
+    dimension move_parcel(3)
+    REAL :: latr0, lonr0, latr1, lonr1, lat_in, lon_in       ! Initial and guess lat/lon (radians)
+    REAL :: dir, rdist, adj , newlat, newlon, time_step, newlev, lev_in          ! Direction, radial distance, backward/forward switch
+
+    time_step = 30
+    adj = 1.
+
+	rdist = SQRT( u**2.0+v**2.0 )*(adj*time_step/radius)      ! is adj needed?
+    dir = pi+ATAN2( adj*-1.0*u, adj*-1.0*v )
+
+    latr0 = torad(lat_in)
+    lonr0 = torad(lon_in)
+
+    ! Calculate new lat and lon using Haversine's forumula
+    latr1 = ASIN( SIN(latr0)*COS(rdist)+COS(latr0)*SIN(rdist)*COS(dir) )
+    lonr1 = lonr0+ATAN2( SIN(dir)*SIN(rdist)*COS(latr0), COS(rdist)-SIN(latr0)*SIN(latr1) )
+
+    newlev = lev_in + (adj*time_step)*w
+
+    ! Convert to degrees
+    newlat = todeg(latr1)
+    newlon = todeg(lonr1)
+    move_parcel = (/newlev, newlat, newlon/)
+    end function move_parcel
+
+
+
+    subroutine petterson(u,v,w,in_time,lev_in, lat_in, lon_in)
+    type (wind) :: u,v,w, u0, v0, w0
+    real locs(3), newlocs(3), lev_in, lat_in, lon_in, in_time
+    integer it
+!  move parcel based on initial vector
+! Get winds at new location.
+! move parcel based on avg of initial and new vector
+! iterate with updated new vector until convergent.
+    u0 = u
+    v0 = v
+    w0 = v
+
+    print*, "********************"
+    newlocs = move_parcel(u%val1,v%val1,w%val1, lev_in, lat_in, lon_in)
+    in_time = in_time + 0.5
+    call get5dval(ncid, u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3) )  ! get initial guess
+
+    do it=1, 3
+    locs  = newlocs
+    newlocs = move_parcel(0.5*(u0%val1+u%val1),0.5*(v0%val1+v%val1),0.5*(w0%val1+w%val1), lev_in, lat_in, lon_in)
+    call get5dval(ncid, u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3) )
+    if(maxval(locs - newlocs).eq.0)then
+        exit
+    end if
+    end do
+    lev_in = newlocs(1)
+    lat_in = newlocs(2)
+    lon_in = newlocs(3)
+    end subroutine petterson
+
+
+
 	subroutine define_coords(vari)
 	type (wind) vari
 	integer varId, tId
@@ -148,7 +218,7 @@
     end do
 	return
 	end subroutine define_coords
-	
+
 
     real function coord_2_int(x, xx)
     real x(:), xx, i, int
@@ -179,11 +249,11 @@
 	real, dimension(:,:,:), allocatable :: define_levels, pert_levels
 	real, dimension(:), allocatable :: profile, ustag_lev
 	integer inds(4), ncid, l, i
-	integer varId, tId, coords(2), ndim 
+	integer varId, tId, coords(2), ndim
 	character (len =25) dimname, newname
 	real bicubic_interp, neville_interp
-    
-	 call check( nf90_inq_varid(ncid, "PHB", tId ) )		
+
+	 call check( nf90_inq_varid(ncid, "PHB", tId ) )
 	 call check( nf90_inquire_variable(ncid, tId, ndims = ndim, dimids = dimIds) )
 	 do i=1,ndim
 		 call check( nf90_inquire_dimension(ncid, dimids(i),name = dimname, len=dimlen) )
@@ -195,8 +265,8 @@
 			loni =  coord_2_int(w%lon, in_lon)
    			lati =  coord_2_int(w%lat, in_lat)
    			inds = int( (/loni(2)-1, lati(2)-1, 1, 2 /) )
-			call check (nf90_get_var(ncid, tId, define_levels, inds, (/ 4,4,dimlen,1/) ) )		
-			call check( nf90_inq_varid(ncid, "PH", tId ) )		
+			call check (nf90_get_var(ncid, tId, define_levels, inds, (/ 4,4,dimlen,1/) ) )
+			call check( nf90_inq_varid(ncid, "PH", tId ) )
 			call check (nf90_get_var(ncid, tId, pert_levels, inds, (/ 4,4,dimlen,1/) ) )
 		   do l=1,dimlen
 		   profile(l) = bicubic_interp(define_levels(:,:,l), lati(1), loni(1) )
@@ -246,20 +316,20 @@
     loni =  coord_2_int(reqvar%lon, in_lon)
     lati =  coord_2_int(reqvar%lat, in_lat)
     inds = int( (/loni(2)-1, lati(2)-1, levi(2)-1, ti(2) /) )
-    
+
     call check (nf90_get_var(ncid, reqvar%id, var, inds, ninds ) )
 
 	!  read in bottom left - bottom right - top left -  topright
 	do i=1,4
 	pro1(i) = bicubic_interp(var(:,:,i), lati(1), loni(1) )
 	end do
-	val= neville_interp(reqvar%lev(levi(2)-1:levi(2)+2), pro1, start_lev, size(pro1) ) 
+	val= neville_interp(reqvar%lev(levi(2)-1:levi(2)+2), pro1, start_lev, size(pro1) )
 
-	
+
 	if(ti(1).ne.0)then
 		print*, "not zero"
 	end if
-	
+
     get4dval = val
     end function get4dval
 
