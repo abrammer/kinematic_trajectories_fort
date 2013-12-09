@@ -1,0 +1,10 @@
+C NCLFORTSTART
+       FUNCTION abcd(x1, x2, xi, xx)
+       REAL x1, x2, xi,xx
+C NCLEND
+
+C NCLFORTSTART
+      REAL FUNCTION lbcd(x1, x2, xi, xx)
+      REAL x1, x2, xi,xx
+C NCLEND
+

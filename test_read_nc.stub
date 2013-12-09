@@ -1,0 +1,7 @@
+C NCLFORTSTART
+    subroutine read_netcdf
+    integer ncid, varid
+    character FILE_NAME, var_name
+    DIMENSION FILE_NAME(*), var_name(*)
+    real data_in
+C NCLEND
