@@ -249,9 +249,9 @@
             end if
         end if
     end do
-    if( int .le. 2 || int .ge. size(x)-3 )then
+    if( int .le. 2 .or. int .ge. size(x)-3 )then
  	print*, "bound met"
- 	   go to 11
+ 	   go to 10
     end do
     coord_2_int(1) = int
     coord_2_int(2) = i
