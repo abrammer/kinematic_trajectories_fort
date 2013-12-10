@@ -8,12 +8,13 @@
      end subroutine check
 
 
+
     PROGRAM read_netcdf
     USE netcdf
     IMPLICIT NONE
     character (len = *), parameter :: VAR_FILE = "/glade/scratch/abrammer/runs/nadine_2012/run3/wind_d03_2012-09-06_00:00:00.nc"
     character (len = *), parameter :: META_FILE = "/glade/scratch/abrammer/runs/nadine_2012/run3/wrfout_d03_2012-09-06_00:00:00.nc"
-
+    character (len = *), parameter :: namefile = "namelist.traj"
     character (len=*), parameter :: FMT1 = "(7F15.5)", FMT0="(7A15)"
     character (len = 25)  lat_name, lon_name, lev_name, tim_name, var_name
     real, dimension(:), allocatable :: lat, lon, lev, time
@@ -25,6 +26,9 @@
     real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
 	real start_time, start_lon, start_lat, start_lev, end_time
 	real t2, t1
+	namelist /time_opt/start_time,end_time,step
+	namelist /traj_opt/start_lev,start_lat,start_lon
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!! External Functions
     real bicubic_interp, neville_interp
@@ -36,6 +40,7 @@
     	real, dimension(:), allocatable :: lat
     	real, dimension(:), allocatable :: lon
     	real, dimension(:), allocatable :: lev
+    	real, dimension(:,:,:,:), allocatable :: grid
     	character (len = 25):: units, name
     	integer :: id, y_stag
     end type wind
@@ -82,20 +87,36 @@
 	print*, "Latitude  (", size(w%lat),"): ",minval(w%lat),":",maxval(w%lat)
 
 
+
+
 !    ***********************************
 !   starting point
+        open(1,file=namefile)
+        read(1,time_opt)
+        read(1,traj_opt)
 
-    start_time = 10.
-    end_time =  50.
-    start_lon = -25.3
-    start_lat = 15.2
-    start_lev = 1531.0
-    step = 60
+
+    call cpu_time ( t1 )
+    call read_time()
+    call cpu_time ( t2 )
+    write ( *, * ) 'Elapsed CPU time = ', t2 - t1
+    print*, "*********************"
 
     call integrate_trajectory(1, start_time, end_time, start_lev, start_lat, start_lon)
 
 
+
+
 	contains
+
+	subroutine read_time()
+    use netcdf
+    integer tId
+    real vara(2226, 1125, 51)
+	call check( nf90_inq_varid(ncid, "PH", tId ) )
+	call check (nf90_get_var(ncid, tId, vara, (/1,1,1,1/), (/ 2226,1125,51,1/) ) )
+    end subroutine
+
 
 	subroutine define_coords(vari)
 	type (wind) vari
@@ -158,9 +179,11 @@
 	call get5dval(ncid, u,v,w, start_time, start_lev, start_lat, start_lon)
     write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
 
-    call cpu_time ( t1 )
     do while (start_time .lt. end_time)
+    call cpu_time ( t1 )
        call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
+    call cpu_time ( t2 )
+    write ( *, * ) 'Elapsed CPU time = ', t2 - t1
        if(.not.istat)then
 		return
 	end if
@@ -168,8 +191,6 @@
 	write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
     end if
     end do
-    call cpu_time ( t2 )
-    write ( *, * ) 'Elapsed CPU time = ', t2 - t1
     end subroutine integrate_trajectory
 
     subroutine petterson(u,v,w,in_time,lev_in, lat_in, lon_in)
