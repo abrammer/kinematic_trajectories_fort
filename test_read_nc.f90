@@ -13,12 +13,15 @@
     IMPLICIT NONE
 !    real lev(:)
     character (len = *), parameter :: FILE_NAME = "/free4/abrammer/WRFOUT/10d50km/wrfout_d01_2010-07-05_00:00:00"
+    character (len=*), parameter :: FMT1 = "(7F15.5)", FMT0="(7A15)"
     character (len = 25)  lat_name, lon_name, lev_name, tim_name, var_name
+    integer, parameter :: text_out = 20
     real, dimension(:), allocatable :: lat, lon, lev, time
     integer ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it
     integer, dimension(nf90_max_var_dims) :: dimIds
     real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
-	real start_time, start_lon, start_lat, start_lev
+	real start_time, start_lon, start_lat, start_lev, end_time
+	real t2, t1
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!! External Functions
     real bicubic_interp, neville_interp
@@ -74,22 +77,13 @@
 !   starting point
 
     start_time = 170.
+    end_time = 190.
     start_lon = -65.3
     start_lat = 15.2
-    start_lev = 154317.0
-
-	call get5dval(ncid, u,v,w, start_time, start_lev, start_lat, start_lon)
-	print*, u%val1
-	print*, v%val1
-	print*, w%val1
-
-    print*, start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
-    do it=0, 10
-    call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
-    print*, start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
-    end do
+    start_lev = 15431.0
 
 
+    call integrate_trajectory(1, start_time, end_time, start_lev, start_lat, start_lon)
 
 	contains
 
@@ -136,12 +130,31 @@
     end function move_parcel
 
 
+    subroutine integrate_trajectory(tr, start_time, end_time, start_lev, start_lat, start_lon)
+    real start_time, end_time, start_lev, start_lat, start_lon
+    integer tr
+
+    open(unit=text_out, file="traj1.txt", status="replace", action="write")
+    write(text_out,FMT0) "TIME","LEV","LAT","LON","U","V","W"
+
+	call get5dval(ncid, u,v,w, start_time, start_lev, start_lat, start_lon)
+    write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
+
+    call cpu_time ( t1 )
+    do while (start_time .lt. end_time)
+       call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
+       write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
+    end do
+    call cpu_time ( t2 )
+    write ( *, * ) 'Elapsed CPU time = ', t2 - t1
+    end subroutine integrate_trajectory
+
 
     subroutine petterson(u,v,w,in_time,lev_in, lat_in, lon_in)
     type (wind) :: u,v,w, u0, v0, w0
     real locs(3), newlocs(3), lev_in, lat_in, lon_in, in_time
     integer it
-!  move parcel based on initial vector
+! move parcel based on initial vector
 ! Get winds at new location.
 ! move parcel based on avg of initial and new vector
 ! iterate with updated new vector until convergent.
@@ -149,7 +162,6 @@
     v0 = v
     w0 = v
 
-    print*, "********************"
     newlocs = move_parcel(u%val1,v%val1,w%val1, lev_in, lat_in, lon_in)
     in_time = in_time + 0.5
     call get5dval(ncid, u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3) )  ! get initial guess
@@ -158,7 +170,7 @@
     locs  = newlocs
     newlocs = move_parcel(0.5*(u0%val1+u%val1),0.5*(v0%val1+v%val1),0.5*(w0%val1+w%val1), lev_in, lat_in, lon_in)
     call get5dval(ncid, u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3) )
-    if(maxval(locs - newlocs).eq.0)then
+    if(maxval(locs - newlocs).eq.0)then ! check for convergence.
         exit
     end if
     end do
@@ -244,6 +256,7 @@
 
 
 	subroutine get_levels(ncid, u,v,w, in_time, in_lat, in_lon)
+	real, parameter :: g=9.8
 	type (wind) :: u,v,w
 	real loni(3), lati(3),  in_lat, in_lon, in_time
 	real, dimension(:,:,:), allocatable :: define_levels, pert_levels
@@ -261,7 +274,7 @@
 			allocate (define_levels(4,4,dimlen))
 			allocate (pert_levels(4,4,dimlen))
 			allocate (profile(dimlen))
-			define_levels = define_levels + pert_levels
+			define_levels = (define_levels + pert_levels) / g
 			loni =  coord_2_int(w%lon, in_lon)
    			lati =  coord_2_int(w%lat, in_lat)
    			inds = int( (/loni(2)-1, lati(2)-1, 1, 2 /) )
@@ -276,7 +289,7 @@
 		end if
 	 end do
 	 allocate (ustag_lev(dimlen-1))
-	 ustag_lev =  profile(1:dimlen-1) + (profile(2:dimlen) - profile(1:dimlen-1) )/ 2.
+	 ustag_lev =  (profile(2:dimlen) + profile(1:dimlen-1) )/ 2.
 	 u%lev = ustag_lev
 	 v%lev = ustag_lev
     end subroutine get_levels
