@@ -78,7 +78,7 @@
 
     start_time = 170.
     end_time = 190.
-    start_lon = -65.3
+    start_lon = -69.5
     start_lat = 15.2
     start_lev = 15431.0
 
@@ -144,7 +144,7 @@
     do while (start_time .lt. end_time)
        call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
        write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
-    end do
+10  end do
     call cpu_time ( t2 )
     write ( *, * ) 'Elapsed CPU time = ', t2 - t1
     end subroutine integrate_trajectory
@@ -248,6 +248,10 @@
             exit
             end if
         end if
+    end do
+    if( int .le. 2 || int .ge. size(x)-3 )then
+ 	print*, "bound met"
+ 	   go to 11
     end do
     coord_2_int(1) = int
     coord_2_int(2) = i
