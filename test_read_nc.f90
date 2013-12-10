@@ -78,7 +78,7 @@
 
     start_time = 170.
     end_time = 190.
-    start_lon = -69.5
+    start_lon = -65.3
     start_lat = 15.2
     start_lev = 15431.0
 
@@ -154,10 +154,10 @@
     type (wind) :: u,v,w, u0, v0, w0
     real locs(3), newlocs(3), lev_in, lat_in, lon_in, in_time
     integer it
-! move parcel based on initial vector
-! Get winds at new location.
-! move parcel based on avg of initial and new vector
-! iterate with updated new vector until convergent.
+	! move parcel based on initial vector
+	! Get winds at new location.
+	! move parcel based on avg of initial and new vector
+	! iterate with updated new vector until convergent.
     u0 = u
     v0 = v
     w0 = v
@@ -249,9 +249,8 @@
             end if
         end if
     end do
-    if( int .le. 2 .or. int .ge. size(x)-3 )then
- 	print*, "bound met"
- 	   go to 10
+    if( int .le. 2 || int .ge. size(x)-3 )then
+!!!  need to add an istat flag to all these routines so we can quit out.
     end do
     coord_2_int(1) = int
     coord_2_int(2) = i
@@ -344,7 +343,7 @@
 
 
 	if(ti(1).ne.0)then
-		print*, "not zero"
+!   would also be a istat time. 
 	end if
 
     get4dval = val
