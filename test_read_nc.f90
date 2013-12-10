@@ -29,7 +29,7 @@
 	namelist /time_opt/start_time,end_time,step
 	namelist /traj_opt/start_lev,start_lat,start_lon
 
-    real get_levels_time, get4dal_time
+    real filio_time, get4dal_time
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!! External Functions
     real bicubic_interp, neville_interp
@@ -52,7 +52,7 @@
     type (wind) ph
 
     istat = 1
-    get_levels_time = 0.
+    filio_time = 0.
     get4dal_time = 0.
 
     call check( nf90_open(VAR_FILE, NF90_NOWRITE, ncid) )
@@ -107,16 +107,16 @@
         read(1,time_opt)
         read(1,traj_opt)
 
-
+    call coord_2_int(time, start_time, ti)
     call cpu_time ( t1 )
-    call grab_grid(u, 3)
-    call grab_grid(v, 3)
-    call grab_grid(w, 3)
+    call grab_grid(u, int(ti(2)))
+    call grab_grid(v, int(ti(2)))
+    call grab_grid(w, int(ti(2)))
     call cpu_time ( t2 )
 
     write ( *, * ) 'Elapsed CPU time = ', t2 - t1
     print*, "*********************"
-
+    filio_time = 0.
     call integrate_trajectory(1, start_time, end_time, start_lev, start_lat, start_lon)
 
 
@@ -127,8 +127,12 @@
 	subroutine grab_grid(reqvar, ti)
     type(wind) reqvar
     integer ti
+    real t2,t1
+    call cpu_time (t1)
 	call check (nf90_get_var(ncid, reqvar%id, reqvar%grid, (/1,1,1,ti/), (/ size(reqvar%lon),size(reqvar%lat),size(reqvar%lev),2/) ) )
 	    reqvar%ti = ti
+	call cpu_time(t2)
+    filio_time =     filio_time + (t2-t1)
     end subroutine
 
 
@@ -198,13 +202,12 @@
     open(unit=text_out, file="traj"//trim(ADJUSTL(stri))//".txt", status="replace", action="write")
     write(text_out,FMT0) "TIME","LEV","LAT","LON","U","V","W"
 
+    call cpu_time ( t1 )
 	call get5dval(u,v,w, start_time, start_lev, start_lat, start_lon)
     write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
 
-    call cpu_time ( t1 )
     do while (start_time .lt. end_time)
        call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
-       print*, get_levels_time, get4dal_time
        if(.not.istat)then
 		return
 	end if
@@ -214,6 +217,7 @@
     end do
     call cpu_time ( t2 )
     write ( *, * ) 'Elapsed CPU time = ', t2 - t1
+    print*, filio_time
 
     end subroutine integrate_trajectory
 
@@ -323,8 +327,6 @@
 	integer varId, tId, coords(2), ndim
 	character (len =25) dimname, newname
 	real bicubic_interp, neville_interp
-    call cpu_time ( t1 )
-
 
      call coord_2_int(ph%lon, in_lon,loni)
      call coord_2_int(ph%lat, in_lat, lati)
@@ -346,10 +348,6 @@
 	 ustag_lev =  (profile(2:dimlen) + profile(1:dimlen-1) )/ 2.
 	 u%lev = ustag_lev
 	 v%lev = ustag_lev
-
-	call cpu_time ( t2 )
-    get_levels_time = get_levels_time + (t2-t1)
-
     end subroutine get_levels
 
 
@@ -360,7 +358,6 @@
 	type (wind) reqvar
 	real bicubic_interp, neville_interp
 	ninds = (/4,4,4,1/)
-    call cpu_time ( t1 )
 
     call coord_2_int(time, in_time, ti)
     call coord_2_int(reqvar%lev, in_lev,levi)
@@ -386,10 +383,6 @@
 	if(ti(1).ne.0)then
 !   would also be a istat time.
 	end if
-
-	call cpu_time ( t2 )
-   get4dal_time = get4dal_time + (t2-t1)
-
 
     get4dval = val
     end function get4dval
