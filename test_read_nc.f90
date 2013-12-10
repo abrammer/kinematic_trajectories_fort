@@ -256,7 +256,7 @@
 
 
 	subroutine get_levels(ncid, u,v,w, in_time, in_lat, in_lon)
-	real, parameter :: g=9.8
+	real, parameter :: g=9.81
 	type (wind) :: u,v,w
 	real loni(3), lati(3),  in_lat, in_lon, in_time
 	real, dimension(:,:,:), allocatable :: define_levels, pert_levels
