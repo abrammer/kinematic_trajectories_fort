@@ -20,14 +20,14 @@
     real, dimension(:), allocatable :: lat, lon, lev, time
 
     integer, parameter :: text_out = 20
-    integer  meta_ncid, ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it,x,t, step
+    integer  meta_ncid, ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it,x,t, step, no_of_parcels
     integer, dimension(nf90_max_var_dims) :: dimIds
 
     real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
 	real start_time, start_lon, start_lat, start_lev, end_time
 	real t2, t1
 	namelist /time_opt/start_time,end_time,step
-	namelist /traj_opt/start_lev,start_lat,start_lon
+	namelist /traj_opt/no_of_parcels,start_lev,start_lat,start_lon
 
     real filio_time, get4dal_time
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -46,14 +46,20 @@
     	character (len = 25):: units, name
     	integer :: id, y_stag, ti
     end type wind
+
+    type parcel
+    	real, dimension(:), allocatable :: u,v,w, lev, lat, lon, time
+    end type parcel
+
     type (wind) u
     type (wind) v
     type (wind) w
     type (wind) ph
 
+    type (parcel) traj
+
     istat = 1
     filio_time = 0.
-    get4dal_time = 0.
 
     call check( nf90_open(VAR_FILE, NF90_NOWRITE, ncid) )
     call check( nf90_open(META_FILE, NF90_NOWRITE, meta_ncid) )
@@ -103,9 +109,12 @@
 
 !    ***********************************
 !   starting point
-        open(1,file=namefile)
-        read(1,time_opt)
-        read(1,traj_opt)
+    open(1,file=namefile)
+    read(1,time_opt)
+    read(1,traj_opt)
+
+   	allocate ( traj%u(no_of_parcels), traj%v(no_of_parcels), traj%w(no_of_parcels),traj%lev(no_of_parcels), traj%lat(no_of_parcels),traj%lon(no_of_parcels),traj%time(no_of_parcels) )
+
 
     call coord_2_int(time, start_time, ti)
     call cpu_time ( t1 )
@@ -198,23 +207,23 @@
     real start_time, end_time, start_lev, start_lat, start_lon
     integer tr
     character (len=3) :: stri
+
     write(stri,'(I3)') tr
     open(unit=text_out, file="traj"//trim(ADJUSTL(stri))//".txt", status="replace", action="write")
     write(text_out,FMT0) "TIME","LEV","LAT","LON","U","V","W"
 
-    call cpu_time ( t1 )
+
 	call get5dval(u,v,w, start_time, start_lev, start_lat, start_lon)
     write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
-
     do while (start_time .lt. end_time)
+
        call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
-       if(.not.istat)then
-		return
-	end if
-    if( mod(start_time, 5.).eq.0 )then
-	write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
-    end if
+
+       if( mod(start_time, 5.).eq.0 )then
+           write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
+       end if
     end do
+
     call cpu_time ( t2 )
     write ( *, * ) 'Elapsed CPU time = ', t2 - t1
     print*, filio_time
