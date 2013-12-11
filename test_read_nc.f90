@@ -27,7 +27,8 @@ end subroutine progress
     PROGRAM read_netcdf
     USE netcdf
     IMPLICIT NONE
-    character (len = *), parameter :: VAR_FILE = "/glade/scratch/abrammer/runs/nadine_2012/run3/wind_d03_2012-09-06_00:00:00.nc"
+    character (len = 999), dimension(:), allocatable :: VAR_FILE
+    character (len = 999) :: files(2)
     character (len = *), parameter :: META_FILE = "/glade/scratch/abrammer/runs/nadine_2012/run3/wrfout_d03_2012-09-06_00:00:00.nc"
     character (len = *), parameter :: namefile = "namelist.traj"
     character (len=*), parameter :: FMT1 = "(7F15.5)", FMT0="(7A15)"
@@ -70,10 +71,15 @@ end subroutine progress
     type (wind) v
     type (wind) w
     type (wind) ph
-
     type (parcel), dimension (:), allocatable :: traj
+    
+     files = (/ "/glade/scratch/abrammer/runs/nadine_2012/run3/wind_d03_2012-09-06_00:00:00.nc", &
+     "/glade/scratch/abrammer/runs/nadine_2012/run3/wind_d03_2012-09-06_01:00:00.nc"/)
 
-    call check( nf90_open(VAR_FILE, NF90_NOWRITE, ncid) )
+	allocate (VAR_FILE(2))
+	VAR_FILE = files
+	print*, trim(ADJUSTL(VAR_FILE(1)))
+    call check( nf90_open(VAR_FILE(1), NF90_NOWRITE, ncid) )
     call check( nf90_open(META_FILE, NF90_NOWRITE, meta_ncid) )
 
     !var_name = "XTIME"
@@ -84,8 +90,8 @@ end subroutine progress
     !allocate ( time(dimlen) )
     !call check (nf90_get_var(ncid, varId, time) )
 
-     allocate(time(12))
-     do t=1,12
+     allocate(time(16))
+     do t=1,16
         time(t) = (t*5)-5
         end do
 
@@ -139,25 +145,50 @@ end subroutine progress
     call grab_grid(u, int(ti(2)))
     call grab_grid(v, int(ti(2)))
     call grab_grid(w, int(ti(2)))
+    call grab_grid(ph, int(ti(2)))
 
     print*, "*********************"
-    filio_time = 0.
-    call integrate_trajectory(1, traj, start_time, end_time)
+    call integrate_trajectory(traj, start_time, end_time)
 
 
 
 
 	contains
+	
+	subroutine update_file(ti)
+    integer ti
+    	if(ti.gt.12)then
+    	call check( nf90_open(VAR_FILE(2), NF90_NOWRITE, ncid) )
+    	    	print*, trim(ADJUSTL(VAR_FILE(2)))
+		end if
+    end subroutine
 
+	
 	subroutine grab_grid(reqvar, ti)
     type(wind) reqvar
-    integer ti
+    integer ti, fti, inc
     real t2,t1
-    call cpu_time (t1)
-	call check (nf90_get_var(ncid, reqvar%id, reqvar%grid, (/1,1,1,ti/), (/ size(reqvar%lon),size(reqvar%lat),size(reqvar%lev),2/) ) )
-	    reqvar%ti = ti
-	call cpu_time(t2)
-    filio_time =     filio_time + (t2-t1)
+		if(ti.gt.12)then
+			fti = ti - 12
+		else
+			fti = ti
+		end if
+    	print*, fti
+    	call update_file(ti)
+        call check( nf90_inq_varid(ncid, reqvar%name, reqvar%id ) )
+        call check (nf90_get_var(ncid, reqvar%id, reqvar%grid(:,:,:,1), (/1,1,1,fti/), (/ size(reqvar%lon),size(reqvar%lat),size(reqvar%lev),1/) ) )
+    	
+    	call update_file(ti+1)
+		if(ti+1.gt.12)then
+		fti = ti+1 - 12
+		else
+		fti = ti+1
+		end if
+        print*, reqvar%name, ti, fti
+        call check( nf90_inq_varid(ncid, reqvar%name, reqvar%id ) )
+        call check (nf90_get_var(ncid, reqvar%id, reqvar%grid(:,:,:,2), (/1,1,1,fti/), (/ size(reqvar%lon),size(reqvar%lat),size(reqvar%lev),1/) ) )
+        reqvar%ti = ti
+        print*, reqvar%name, ti, fti
     end subroutine
 
 
@@ -171,42 +202,38 @@ end subroutine progress
     call check( nf90_inquire_variable(ncid, vari%id, dimids = dimIds(:ndim) ) )
     do i=1,ndim
 		call check( nf90_inquire_dimension(ncid, dimids(i),name = dimname, len=dimlen) )
-		if(dimname == "west_east")then
+		select case (dimname)
+		case( "west_east")
 			allocate ( vari%lon(dimlen) )
 			allocate ( lonvar(dimlen) )
 			call check( nf90_inq_varid(meta_ncid, "XLONG", tId) )
 			call check (nf90_get_var(meta_ncid, tId, lonvar, (/1,1,1,1/), (/dimlen,1,1,0/) ) )
 			vari%lon = lonvar
-		end if
-		if(dimname == "west_east_stag")then
+		case( "west_east_stag")
 			allocate ( vari%lon(dimlen) )
 			allocate ( lonvar(dimlen) )
 			call check( nf90_inq_varid(meta_ncid, "XLONG_U", tId ) )
 			call check (nf90_get_var(meta_ncid, tId, lonvar, (/1,1,1,1/), (/dimlen,1,1,0/) ) )
 			vari%lon = lonvar
-		end if
-		if(dimname == "south_north")then
+		case( "south_north")
 			allocate ( vari%lat(dimlen) )
 			allocate ( latvar(dimlen) )
 			call check( nf90_inq_varid(meta_ncid, "XLAT", tId ) )
 			call check (nf90_get_var(meta_ncid, tId,latvar, (/1,1,1,1/), (/ 1,dimlen,1,0/) ) )
 			vari%lat = latvar
-		end if
-		if(dimname == "south_north_stag")then
+		case( "south_north_stag")
 			allocate ( vari%lat(dimlen) )
 			allocate ( latvar(dimlen) )
 			call check( nf90_inq_varid(meta_ncid, "XLAT_V", tId ) )
 			call check (nf90_get_var(meta_ncid, tId,latvar, (/1,1,1,1/), (/ 1,dimlen,1,0/) ) )
 			vari%lat = latvar
-		end if
-		if(dimname == "bottom_top")then
+		case( "bottom_top")
             allocate (vari%lev(dimlen))
             vari%y_stag = 0
-		end if
-		if(dimname == "bottom_top_stag")then
+		case( "bottom_top_stag")
             vari%y_stag = 1
             allocate (vari%lev(dimlen))
-		end if
+		end select
     end do
     allocate(vari%grid( size(vari%lon), size(vari%lat), size(vari%lev),2 ) )
     if(vari%name =="PH")then
@@ -219,45 +246,44 @@ end subroutine progress
 	return
 	end subroutine define_coords
 
-    subroutine integrate_trajectory(tr, traj, time,end_time)
+    subroutine integrate_trajectory(traj, time,end_time)
     type (parcel):: traj(:)
-    real time, end_time, start_lev, start_lat, start_lon, stime
-    integer tr, t
+    real time, end_time, stime,minstep
+    integer t
     character (len=3) :: stri
-    real(kind=4)::minstep
-        minstep = step/60D0
-        print*, minstep
-        stime = time
+
+	minstep = step/60D0
+	print*, minstep
+	stime = time
 
     do t=1,no_of_parcels
-    call get5dval(u,v,w, time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t) )
-    write(stri,'(I3)') t
-    open(unit=(100+t), file="traj"//trim(ADJUSTL(stri))//".txt", status="replace", action="write")
-    write((100+t),FMT0) "TIME","LEV","LAT","LON","U","V","W"
-    write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1, traj(t)%v1, traj(t)%w1
+	   call get5dval(u,v,w, time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t) )
+	   write(stri,'(I3)') t
+	   open(unit=(100+t), file="traj"//trim(ADJUSTL(stri))//".txt", status="replace", action="write")
+	   write((100+t),FMT0) "TIME","LEV","LAT","LON","U","V","W"
+	   write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1, traj(t)%v1, traj(t)%w1
     end do
 
    open(unit=6, carriagecontrol='fortran')
     do while (time .lt. end_time)
         time = time + minstep  
-     do t=1,no_of_parcels
-          call petterson(u,v,w,  time , traj(t)%lev, traj(t)%lat, traj(t)%lon,traj(t))
-           if( mod( time, 5.).lt.minstep )then
-               write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1,traj(t)%v1,traj(t)%w1
-           end if
-       end do
+		do t=1,no_of_parcels
+			 call petterssen(u,v,w,  time ,traj(t))
+			  if( mod( time, 5.).lt.minstep )then
+				  write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1,traj(t)%v1,traj(t)%w1
+			  end if
+		  end do
        call progress( (time-stime)/(end_time-stime)*100. )
    end do
 
-    call cpu_time ( t2 )
-    write ( *, * ) 'Elapsed CPU time = ', t2 - t1
-    print*, filio_time
-
-    end subroutine integrate_trajectory
+   call cpu_time ( t2 )
+   write ( *, * ) 'Elapsed CPU time = ', t2 - t1
+   end subroutine integrate_trajectory
 
 
 
-    subroutine petterson(u,v,w,in_time,lev_in, lat_in, lon_in, traj)
+    subroutine petterssen(u,v,w,in_time,traj)
+    real, parameter :: converg = 0.000001   !!! check for convergence
     type (wind) :: u,v,w
     type (parcel) :: traj
     real locs(3), newlocs(3), lev_in, lat_in, lon_in, in_time
@@ -271,24 +297,24 @@ end subroutine progress
     v0 = traj%v1
     w0 = traj%w1
 
-    newlocs = move_parcel(traj%u1,traj%v1,traj%w1, lev_in, lat_in, lon_in)
+    newlocs = move_parcel(traj%u1,traj%v1,traj%w1, traj%lev, traj%lat, traj%lon)
     call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )  ! get initial guess
 
     do it=1, 3
     locs  = newlocs
-    newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), lev_in, lat_in, lon_in)
+    newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), traj%lev, traj%lat, traj%lon)
     call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )
-    if(maxval(locs - newlocs).eq.0)then ! check for convergence.
+    if(maxval(abs(locs - newlocs)).le.converg)then ! check for convergence.
     exit
     end if
     if(it.eq.3)then
-        print*, "solution not converged : Likely Due to CFL Issue. Try reducing the timestep"
+        print*, maxval(abs(locs - newlocs)), "solution not converged : Likely Due to CFL Issue. Try reducing the timestep"
     end if
     end do
-    lev_in = newlocs(1)
-    lat_in = newlocs(2)
-    lon_in = newlocs(3)
-    end subroutine petterson
+    traj%lev = newlocs(1)
+    traj%lat = newlocs(2)
+    traj%lon = newlocs(3)
+    end subroutine petterssen
 
 
     real function move_parcel(u,v,w,lev_in, lat_in, lon_in)
@@ -355,6 +381,8 @@ end subroutine progress
 	end if
 	end subroutine get5dval
 
+
+
 	subroutine get_levels(u,v,w, in_time, in_lat, in_lon)
 	type (wind) u,v,w
 	real, parameter :: g=9.81
@@ -408,14 +436,14 @@ end subroutine progress
         call grab_grid(reqvar, reqvar%ti+1 )
     end if
     tt = ( ti(2) - reqvar%ti) + 1
-
-    var = reqvar%grid(inds(2):inds(2)+3, inds(2):inds(2)+3, inds(3):inds(3)+3, tt)
+	
+    var = reqvar%grid(inds(1):inds(1)+3, inds(2):inds(2)+3, inds(3):inds(3)+3, tt)
 
 	!  read in bottom left - bottom right - top left -  topright
 	do i=1,4
 	pro1(i) = bicubic_interp(var(:,:,i), lati(1), loni(1) )
 	end do
-	val= neville_interp(reqvar%lev(levi(2)-1:levi(2)+2), pro1, start_lev, size(pro1) )
+	val= neville_interp(reqvar%lev(inds(3):inds(3)+3), pro1, in_lev, size(pro1) )
 
 	if(ti(1).ne.0)then
 !   would also be a istat time.
