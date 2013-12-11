@@ -8,6 +8,21 @@
      end subroutine check
 
 
+subroutine progress(j)
+  implicit none
+  integer k
+  real j
+  character(len=57)::bar="???% |                                                  |"
+  write(unit=bar(1:3),fmt="(i3)") int(j)
+  do k=1, int(j/2)
+    bar(6+k:6+k)="*"
+  enddo
+! print the progress bar.
+  write(6,fmt="(a1,a1,a57)") '+',char(13), bar
+  return
+end subroutine progress
+
+
 
     PROGRAM read_netcdf
     USE netcdf
@@ -48,7 +63,7 @@
     end type wind
 
     type parcel
-    	real, dimension(:), allocatable :: u,v,w, lev, lat, lon, time
+    	real :: u1,v1,w1,u2,v2,w2, lev, lat, lon, time
     end type parcel
 
     type (wind) u
@@ -56,10 +71,7 @@
     type (wind) w
     type (wind) ph
 
-    type (parcel) traj
-
-    istat = 1
-    filio_time = 0.
+    type (parcel), dimension (:), allocatable :: traj
 
     call check( nf90_open(VAR_FILE, NF90_NOWRITE, ncid) )
     call check( nf90_open(META_FILE, NF90_NOWRITE, meta_ncid) )
@@ -113,20 +125,24 @@
     read(1,time_opt)
     read(1,traj_opt)
 
-   	allocate ( traj%u(no_of_parcels), traj%v(no_of_parcels), traj%w(no_of_parcels),traj%lev(no_of_parcels), traj%lat(no_of_parcels),traj%lon(no_of_parcels),traj%time(no_of_parcels) )
+    allocate( traj(no_of_parcels) )
+    do t=1,no_of_parcels
+       traj(t)%lat = start_lat
+       traj(t)%lev = start_lev+(t*400)
+       traj(t)%lon = start_lon
+    end do
 
+    print*, "Starting", no_of_parcels," trajectories"
 
+!!    grab first time segment of data
     call coord_2_int(time, start_time, ti)
-    call cpu_time ( t1 )
     call grab_grid(u, int(ti(2)))
     call grab_grid(v, int(ti(2)))
     call grab_grid(w, int(ti(2)))
-    call cpu_time ( t2 )
 
-    write ( *, * ) 'Elapsed CPU time = ', t2 - t1
     print*, "*********************"
     filio_time = 0.
-    call integrate_trajectory(1, start_time, end_time, start_lev, start_lat, start_lon)
+    call integrate_trajectory(1, traj, start_time, end_time)
 
 
 
@@ -203,26 +219,35 @@
 	return
 	end subroutine define_coords
 
-    subroutine integrate_trajectory(tr, start_time, end_time, start_lev, start_lat, start_lon)
-    real start_time, end_time, start_lev, start_lat, start_lon
-    integer tr
+    subroutine integrate_trajectory(tr, traj, time,end_time)
+    type (parcel):: traj(:)
+    real time, end_time, start_lev, start_lat, start_lon, stime
+    integer tr, t
     character (len=3) :: stri
+    real(kind=4)::minstep
+        minstep = step/60D0
+        print*, minstep
+        stime = time
 
-    write(stri,'(I3)') tr
-    open(unit=text_out, file="traj"//trim(ADJUSTL(stri))//".txt", status="replace", action="write")
-    write(text_out,FMT0) "TIME","LEV","LAT","LON","U","V","W"
-
-
-	call get5dval(u,v,w, start_time, start_lev, start_lat, start_lon)
-    write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
-    do while (start_time .lt. end_time)
-
-       call petterson(u,v,w, start_time, start_lev, start_lat, start_lon)
-
-       if( mod(start_time, 5.).eq.0 )then
-           write(text_out,FMT1) start_time, start_lev, start_lat, start_lon, u%val1, v%val1, w%val1
-       end if
+    do t=1,no_of_parcels
+    call get5dval(u,v,w, time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t) )
+    write(stri,'(I3)') t
+    open(unit=(100+t), file="traj"//trim(ADJUSTL(stri))//".txt", status="replace", action="write")
+    write((100+t),FMT0) "TIME","LEV","LAT","LON","U","V","W"
+    write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1, traj(t)%v1, traj(t)%w1
     end do
+
+   open(unit=6, carriagecontrol='fortran')
+    do while (time .lt. end_time)
+        time = time + minstep  
+     do t=1,no_of_parcels
+          call petterson(u,v,w,  time , traj(t)%lev, traj(t)%lat, traj(t)%lon,traj(t))
+           if( mod( time, 5.).lt.minstep )then
+               write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1,traj(t)%v1,traj(t)%w1
+           end if
+       end do
+       call progress( (time-stime)/(end_time-stime)*100. )
+   end do
 
     call cpu_time ( t2 )
     write ( *, * ) 'Elapsed CPU time = ', t2 - t1
@@ -232,8 +257,9 @@
 
 
 
-    subroutine petterson(u,v,w,in_time,lev_in, lat_in, lon_in)
+    subroutine petterson(u,v,w,in_time,lev_in, lat_in, lon_in, traj)
     type (wind) :: u,v,w
+    type (parcel) :: traj
     real locs(3), newlocs(3), lev_in, lat_in, lon_in, in_time
     real u0,v0,w0
     integer it
@@ -241,20 +267,22 @@
 	! Get winds at new location.
 	! move parcel based on avg of initial and new vector
 	! iterate with updated new vector until convergent.
-    u0 = u%val1
-    v0 = v%val1
-    w0 = w%val1
+    u0 = traj%u1
+    v0 = traj%v1
+    w0 = traj%w1
 
-    newlocs = move_parcel(u%val1,v%val1,w%val1, lev_in, lat_in, lon_in)
-    in_time = in_time + step/60.
-    call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3) )  ! get initial guess
+    newlocs = move_parcel(traj%u1,traj%v1,traj%w1, lev_in, lat_in, lon_in)
+    call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )  ! get initial guess
 
     do it=1, 3
     locs  = newlocs
-    newlocs = move_parcel(0.5*(u0+u%val1),0.5*(v0+v%val1),0.5*(w0+w%val1), lev_in, lat_in, lon_in)
-    call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3) )
+    newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), lev_in, lat_in, lon_in)
+    call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )
     if(maxval(locs - newlocs).eq.0)then ! check for convergence.
     exit
+    end if
+    if(it.eq.3)then
+        print*, "solution not converged : Likely Due to CFL Issue. Try reducing the timestep"
     end if
     end do
     lev_in = newlocs(1)
@@ -305,30 +333,31 @@
     end function todeg
 
 
-	subroutine get5dval(u,v,w, in_time, lev, lat, lon)
+	subroutine get5dval(u,v,w, in_time, lev, lat, lon, traj)
 	type (wind) u,v,w
+    type (parcel) traj
 	real in_time, lev, lat, lon, ti(3), t1, t2
 	real linear_interp
-	call coord_2_int(time, in_time, ti)
 
+	call coord_2_int(time, in_time, ti)
 	call get_levels(u,v,w, time(ti(2)), lat, lon)
-	u%val1 = get4dval(u, time(ti(2)), lev, lat, lon)
-	v%val1 = get4dval(v, time(ti(2)),lev, lat, lon)
-	w%val1 = get4dval(w, time(ti(2)), lev, lat, lon)
+	traj%u1 = get4dval(u, time(ti(2)), lev, lat, lon)
+	traj%v1 = get4dval(v, time(ti(2)),lev, lat, lon)
+	traj%w1 = get4dval(w, time(ti(2)), lev, lat, lon)
 	if(ti(1).ne.0)then
 	  call get_levels(u,v,w, time(ti(2)+1), lat, lon)
-	  u%val2 = get4dval(u, time(ti(2)+1),lev, lat, lon)
-	  v%val2 = get4dval(v, time(ti(2)+1),lev, lat, lon)
-	  w%val2 = get4dval(w, time(ti(2)+1),lev, lat, lon)
-	  u%val1 = linear_interp( u%val1, u%val2, ti(1) )
-	  v%val1 = linear_interp( v%val1, v%val2, ti(1) )
-	  w%val1 = linear_interp( w%val1, w%val2, ti(1) )
+	  traj%u2 = get4dval(u, time(ti(2)+1),lev, lat, lon)
+	  traj%v2 = get4dval(v, time(ti(2)+1),lev, lat, lon)
+	  traj%w2 = get4dval(w, time(ti(2)+1),lev, lat, lon)
+	  traj%u1 = linear_interp( traj%u1, traj%u2, ti(1) )
+	  traj%v1 = linear_interp( traj%v1, traj%v2, ti(1) )
+	  traj%w1 = linear_interp( traj%w1, traj%w2, ti(1) )
 	end if
 	end subroutine get5dval
 
 	subroutine get_levels(u,v,w, in_time, in_lat, in_lon)
+	type (wind) u,v,w
 	real, parameter :: g=9.81
-	type (wind) :: u,v,w
 	real loni(3), lati(3),  in_lat, in_lon, in_time, t2, t1
 	real :: define_levels(4,4,51)
 	real :: profile(51), ustag_lev(50)
@@ -348,8 +377,8 @@
      end if
      tt = ( ti(2) - ph%ti) + 1
 
-     define_levels = ( ph%base(inds(2):inds(2)+3, inds(2):inds(2)+3, inds(3):inds(3)+3) + ph%grid(inds(2):inds(2)+3, inds(2):inds(2)+3, inds(3):inds(3)+3, tt)) / g
-     do l=1,dimlen
+     define_levels = ( ph%base(inds(2):inds(2)+3, inds(2):inds(2)+3, :) + ph%grid(inds(2):inds(2)+3, inds(2):inds(2)+3, :, tt)) / g
+     do l=1,size(profile)
          profile(l) = bicubic_interp(define_levels(:,:,l), lati(1), loni(1) )
      end do
 
@@ -387,7 +416,6 @@
 	pro1(i) = bicubic_interp(var(:,:,i), lati(1), loni(1) )
 	end do
 	val= neville_interp(reqvar%lev(levi(2)-1:levi(2)+2), pro1, start_lev, size(pro1) )
-
 
 	if(ti(1).ne.0)then
 !   would also be a istat time.
