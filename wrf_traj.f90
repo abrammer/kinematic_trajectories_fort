@@ -2,23 +2,20 @@
     USE netcdf
     IMPLICIT NONE
     character (len = 999), dimension(:), allocatable :: VAR_FILE
-    character (len = 499) :: windfiles(5), metafile
-    character (len =999) ::  META_FILE 
-    character (len = *), parameter :: namefile = "namelist.traj"
-    character (len=*), parameter :: FMT1 = "(7F15.5)", FMT0="(7A15)"
+    character (len = 499) :: windfiles(5), metafile, META_FILE
+    character (len = *), parameter :: namefile = "namelist.traj", FMT1 = "(7F15.5)", FMT0="(7A15)"
     character (len = 25)  lat_name, lon_name, lev_name, tim_name, var_name
     real, dimension(:), allocatable :: lat, lon, lev, time, file_times
     real :: filetimes(99), outmin
-    integer, parameter :: text_out = 20
     integer  meta_ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it,x,t, step, no_of_parcels
     integer nfiles,f
     integer, dimension(:), allocatable :: ncid
     integer, dimension(nf90_max_var_dims) :: dimIds
     integer ntime,mintime, maxtime, timedt
-        real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
+    real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
 	real start_time, start_lon, start_lat, start_lev, end_time
 	real t2, t1
-        
+
         namelist /fileio/metafile,nfiles, windfiles,filetimes
 	namelist /time_opt/start_time,end_time,step,outmin, mintime,maxtime,timedt
 	namelist /traj_opt/no_of_parcels,start_lev,start_lat,start_lon
@@ -52,10 +49,10 @@
     type (parcel), dimension (:), allocatable :: traj
 
       open(1,file=namefile)
-      read(1,fileio)  
+      read(1,fileio)
       read(1,time_opt)
       read(1,traj_opt)
-      
+
          META_FILE =TRIM(ADJUSTL(METAFILE))
         print*, META_FILE
 
@@ -166,7 +163,7 @@ print*, "*****************************"
          call coord_2_int(file_times, time(ti+i), fi)
          call coord_2_int(time, file_times(fi(2)),  pfi)
          fti = (ti+i)-(pfi(2)-1)
-        
+
          lncid = ncid(fi(2))
          call check( nf90_inq_varid(lncid, reqvar%name, reqvar%id ) )
          call check( nf90_get_var(lncid, reqvar%id, reqvar%grid(:,:,:,1+i), (/1,1,1,fti/), (/ size(reqvar%lon),size(reqvar%lat),size(reqvar%lev),1/) ) )
@@ -239,7 +236,7 @@ print*, "*****************************"
     integer t
     character (len=3) :: stri
 
-	minstep = step/60D0  ! have an issue with rounding errors at the moment. 
+	minstep = step/60D0  ! have an issue with rounding errors at the moment.
 	stime = time
 
     do t=1,no_of_parcels
@@ -252,7 +249,7 @@ print*, "*****************************"
 
    open(unit=6, carriagecontrol='fortran')
     do while (time .lt. end_time)
-        time = time + minstep  
+        time = time + minstep
 		do t=1,no_of_parcels
         		 call petterssen(u,v,w,  time ,traj(t))
 			  if( mod( time, outmin).lt.minstep )then
@@ -280,12 +277,12 @@ print*, "*****************************"
     v0 = traj%v1
     w0 = traj%w1
 
-	! Make an initial movement with initial winds. 
+	! Make an initial movement with initial winds.
     newlocs = move_parcel(traj%u1,traj%v1,traj%w1, traj%lev, traj%lat, traj%lon)
     call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )  ! get initial guess
-	
+
 	! Use first guess location, and make new movement using average of winds from X0 and X1, iterate until they are the same
-    do it=1, 3		! This rarely take 3 iterations. 
+    do it=1, 3		! This rarely take 3 iterations.
 	   locs  = newlocs
 	   newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), traj%lev, traj%lat, traj%lon)
 	   call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )
@@ -332,13 +329,13 @@ print*, "*****************************"
 
 
 	REAL function torad(val)
-	REAL, PARAMETER :: pi = 3.14159265358979 
+	REAL, PARAMETER :: pi = 3.14159265358979
 	real val
     torad = val* pi/180.
     end function torad
 
     REAL function todeg(val)
-	REAL, PARAMETER :: pi = 3.14159265358979 
+	REAL, PARAMETER :: pi = 3.14159265358979
 	real val
     todeg = val* 180./pi
     end function todeg
@@ -355,7 +352,7 @@ print*, "*****************************"
 	traj%u1 = get4dval(u, time(ti(2)), lev, lat, lon)
 	traj%v1 = get4dval(v, time(ti(2)),lev, lat, lon)
 	traj%w1 = get4dval(w, time(ti(2)), lev, lat, lon)
-	if(ti(1).ne.0)then  ! if we're exactly on a data time, may as well take it. 
+	if(ti(1).ne.0)then  ! if we're exactly on a data time, may as well take it.
 	  call get_levels(u,v,w, time(ti(2)+1), lat, lon)
 	  traj%u2 = get4dval(u, time(ti(2)+1),lev, lat, lon)
 	  traj%v2 = get4dval(v, time(ti(2)+1),lev, lat, lon)
@@ -420,7 +417,7 @@ print*, "*****************************"
         call grab_grid(reqvar, reqvar%ti+1 )
 	    tt = ( ti(2) - reqvar%ti) + 1
     end if
-	
+
     var = reqvar%grid(inds(1):inds(1)+3, inds(2):inds(2)+3, inds(3):inds(3)+3, tt)
 	!  read in bottom left - bottom right - top left -  topright
 
