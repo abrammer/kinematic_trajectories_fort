@@ -100,9 +100,6 @@ end subroutine progress
 
 	u%name = "U"
 	call define_coords(u)
-	print*, "U Variable"
-	print*, "Longitude  (", size(u%lon),"): ",minval(u%lon),":",maxval(u%lon)
-	print*, "Latitude  (", size(u%lat),"): ",minval(u%lat),":",maxval(u%lat)
 
 	v%name = "V"
 	call define_coords(v)
@@ -188,20 +185,20 @@ end subroutine progress
         call check( nf90_inq_varid(ncid, reqvar%name, reqvar%id ) )
         call check (nf90_get_var(ncid, reqvar%id, reqvar%grid(:,:,:,2), (/1,1,1,fti/), (/ size(reqvar%lon),size(reqvar%lat),size(reqvar%lev),1/) ) )
         reqvar%ti = ti
-        print*, reqvar%name, ti, fti
     end subroutine
 
 
 	subroutine define_coords(vari)
 	type (wind) vari
-	integer varId, tId
+	integer varId, tId, dimids(6)
 	character (len =25) dimname, newname
 	real, dimension(:), allocatable :: lonvar, latvar
     call check( nf90_inq_varid(ncid, vari%name, vari%id ) )
-    call check( nf90_inquire_variable(ncid, vari%id, ndims = ndim, dimids = dimIds, natts = numAtts) )
-    call check( nf90_inquire_variable(ncid, vari%id, dimids = dimIds(:ndim) ) )
+    call check( nf90_inquire_variable(ncid, vari%id, ndims = ndim, dimids = dimids, natts = numAtts) )
+!    call check( nf90_inquire_variable(ncid, vari%id,  ) )
+	print*, dimids(:ndim)
     do i=1,ndim
-		call check( nf90_inquire_dimension(ncid, dimids(i),name = dimname, len=dimlen) )
+		call check( nf90_inquire_dimension(ncid, dimIds(i),name = dimname, len=dimlen) )
 		select case (dimname)
 		case( "west_east")
 			allocate ( vari%lon(dimlen) )
@@ -243,6 +240,9 @@ end subroutine progress
     else
        allocate(vari%base(1,1,1)  )  !! just so we don't have unallocated grids? Not sure whether this matters
     end if
+    print*, vari%name
+	print*, "Longitude  (", size(vari%lon),"): ",minval(vari%lon),":",maxval(vari%lon)
+	print*, "Latitude   (", size(vari%lat),"): ",minval(vari%lat),":",maxval(vari%lat)
 	return
 	end subroutine define_coords
 
@@ -252,8 +252,7 @@ end subroutine progress
     integer t
     character (len=3) :: stri
 
-	minstep = step/60D0
-	print*, minstep
+	minstep = step/60D0  ! have an issue with rounding errors at the moment. 
 	stime = time
 
     do t=1,no_of_parcels
@@ -289,27 +288,26 @@ end subroutine progress
     real locs(3), newlocs(3), lev_in, lat_in, lon_in, in_time
     real u0,v0,w0
     integer it
-	! move parcel based on initial vector
-	! Get winds at new location.
-	! move parcel based on avg of initial and new vector
-	! iterate with updated new vector until convergent.
+	! Save initial winds.
     u0 = traj%u1
     v0 = traj%v1
     w0 = traj%w1
 
+	! Make an initial movement with initial winds. 
     newlocs = move_parcel(traj%u1,traj%v1,traj%w1, traj%lev, traj%lat, traj%lon)
     call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )  ! get initial guess
-
-    do it=1, 3
-    locs  = newlocs
-    newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), traj%lev, traj%lat, traj%lon)
-    call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )
-    if(maxval(abs(locs - newlocs)).le.converg)then ! check for convergence.
-    exit
-    end if
-    if(it.eq.3)then
-        print*, maxval(abs(locs - newlocs)), "solution not converged : Likely Due to CFL Issue. Try reducing the timestep"
-    end if
+	
+	! Use first guess location, and make new movement using average of winds from X0 and X1, iterate until they are the same
+    do it=1, 3		! This rarely take 3 iterations. 
+	   locs  = newlocs
+	   newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), traj%lev, traj%lat, traj%lon)
+	   call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )
+	   if(maxval(abs(locs - newlocs)).le.converg)then 	! check for convergence.
+		  exit
+	   end if
+	   if(it.eq.3)then
+		   print*, maxval(abs(locs - newlocs)), "solution not converged : Likely Due to CFL Issue. Try reducing the timestep"
+	   end if
     end do
     traj%lev = newlocs(1)
     traj%lat = newlocs(2)
@@ -317,19 +315,19 @@ end subroutine progress
     end subroutine petterssen
 
 
-    real function move_parcel(u,v,w,lev_in, lat_in, lon_in)
-    real u,v,w
+    real function move_parcel(Vu,Vv,Vw,lev_in, lat_in, lon_in)
+    dimension move_parcel(3)
+    real Vu,Vv,Vw
     REAL, PARAMETER :: pi = 3.14159265358979  ! pi
     REAL, PARAMETER :: radius = 6371220.0     ! Earth radius (m)
-    dimension move_parcel(3)
     REAL :: latr0, lonr0, latr1, lonr1, lat_in, lon_in       ! Initial and guess lat/lon (radians)
     REAL :: dir, rdist, adj , newlat, newlon, time_step, newlev, lev_in          ! Direction, radial distance, backward/forward switch
 
     time_step = step
     adj = 1.
 
-	rdist = SQRT( u**2.0+v**2.0 )*(adj*time_step/radius)      ! is adj needed?
-    dir = pi+ATAN2( adj*-1.0*u, adj*-1.0*v )
+	rdist = SQRT( Vu**2.0+Vv**2.0 )*(adj*time_step/radius)      ! is adj needed?
+    dir = pi+ATAN2( adj*-1.0*Vu, adj*-1.0*Vv )
 
     latr0 = torad(lat_in)
     lonr0 = torad(lon_in)
@@ -338,22 +336,22 @@ end subroutine progress
     latr1 = ASIN( SIN(latr0)*COS(rdist)+COS(latr0)*SIN(rdist)*COS(dir) )
     lonr1 = lonr0+ATAN2( SIN(dir)*SIN(rdist)*COS(latr0), COS(rdist)-SIN(latr0)*SIN(latr1) )
 
-    newlev = lev_in + (adj*time_step)*w
-    ! Convert to degrees
-    newlat = todeg(latr1)
+    newlev = lev_in + (adj*time_step)*Vw
+
+    newlat = todeg(latr1)  ! convert to degs
     newlon = todeg(lonr1)
     move_parcel = (/newlev, newlat, newlon/)
     end function move_parcel
 
 
 	REAL function torad(val)
-	REAL, PARAMETER :: pi = 3.14159265358979  ! pi
+	REAL, PARAMETER :: pi = 3.14159265358979 
 	real val
     torad = val* pi/180.
     end function torad
 
     REAL function todeg(val)
-	REAL, PARAMETER :: pi = 3.14159265358979  ! pi
+	REAL, PARAMETER :: pi = 3.14159265358979 
 	real val
     todeg = val* 180./pi
     end function todeg
@@ -370,7 +368,7 @@ end subroutine progress
 	traj%u1 = get4dval(u, time(ti(2)), lev, lat, lon)
 	traj%v1 = get4dval(v, time(ti(2)),lev, lat, lon)
 	traj%w1 = get4dval(w, time(ti(2)), lev, lat, lon)
-	if(ti(1).ne.0)then
+	if(ti(1).ne.0)then  ! if we're exactly on a data time, may as well take it. 
 	  call get_levels(u,v,w, time(ti(2)+1), lat, lon)
 	  traj%u2 = get4dval(u, time(ti(2)+1),lev, lat, lon)
 	  traj%v2 = get4dval(v, time(ti(2)+1),lev, lat, lon)
@@ -394,18 +392,18 @@ end subroutine progress
 	character (len =25) dimname, newname
 	real bicubic_interp, neville_interp
 
-     call coord_2_int(ph%lon, in_lon,loni)
-     call coord_2_int(ph%lat, in_lat, lati)
      call coord_2_int(time, in_time, ti)
+     call coord_2_int(ph%lat, in_lat, lati)
+     call coord_2_int(ph%lon, in_lon,loni)
 
      inds = int( (/loni(2)-1, lati(2)-1, 1, ti(2) /) )
      tt = ( ti(2) - ph%ti) + 1
      if(tt.gt.2)then
          call grab_grid(ph, ph%ti+1 )
+		 tt = ( ti(2) - ph%ti) + 1
      end if
-     tt = ( ti(2) - ph%ti) + 1
 
-     define_levels = ( ph%base(inds(2):inds(2)+3, inds(2):inds(2)+3, :) + ph%grid(inds(2):inds(2)+3, inds(2):inds(2)+3, :, tt)) / g
+     define_levels = ( ph%base(inds(1):inds(1)+3, inds(2):inds(2)+3, :) + ph%grid(inds(1):inds(1)+3, inds(2):inds(2)+3, :, tt)) / g
      do l=1,size(profile)
          profile(l) = bicubic_interp(define_levels(:,:,l), lati(1), loni(1) )
      end do
@@ -418,12 +416,11 @@ end subroutine progress
 
 
 	real function get4dval( reqvar, in_time, in_lev, in_lat, in_lon)
-	real ti(3), levi(3), loni(3), lati(3),  in_time, in_lat, in_lon, in_lev
+	real ti(3), levi(3), loni(3), lati(3),in_time,in_lev, in_lat, in_lon
 	real pro1(4), var(4,4,4), t1, t2
 	integer inds(4), ninds(4), tt
 	type (wind) reqvar
 	real bicubic_interp, neville_interp
-	ninds = (/4,4,4,1/)
 
     call coord_2_int(time, in_time, ti)
     call coord_2_int(reqvar%lev, in_lev,levi)
@@ -434,20 +431,16 @@ end subroutine progress
     tt = ( ti(2) - reqvar%ti) + 1
     if(tt.gt.2)then
         call grab_grid(reqvar, reqvar%ti+1 )
+	    tt = ( ti(2) - reqvar%ti) + 1
     end if
-    tt = ( ti(2) - reqvar%ti) + 1
 	
     var = reqvar%grid(inds(1):inds(1)+3, inds(2):inds(2)+3, inds(3):inds(3)+3, tt)
-
 	!  read in bottom left - bottom right - top left -  topright
+
 	do i=1,4
-	pro1(i) = bicubic_interp(var(:,:,i), lati(1), loni(1) )
+	   pro1(i) = bicubic_interp(var(:,:,i), lati(1), loni(1) )
 	end do
 	val= neville_interp(reqvar%lev(inds(3):inds(3)+3), pro1, in_lev, size(pro1) )
-
-	if(ti(1).ne.0)then
-!   would also be a istat time.
-	end if
 
     get4dval = val
     end function get4dval
@@ -456,24 +449,19 @@ end subroutine progress
 
     subroutine coord_2_int(x, xx, coords)
     real x(:), xx, int, coords(3)
-    do i=1, size(x)-1
-       if(x(2) .gt. x(1)) then
-            if( xx >= x(i) .and. xx < x(i+1) )then
-            int = 1.0* (xx - x(i)) / (x(i+1) - x(i) )
-            exit
-            end if
-        else
-            if( xx <= x(i) .and. xx > x(i+1) )then
-            int = 1.0* (xx - x(i)) / (x(i+1) - x(i) )
-            exit
-            end if
-        end if
-    end do
-!    if(.and. ((i .le. 2) .or. (i .ge. size(x)-3)) )then
-!       istat = istat+1
-! add check to inds in get levels maybe instead.
-! can then check if dimension concurrently.
-!   end if
+	 do i=1, size(x)-1
+		if(x(2) .gt. x(1)) then
+			 if( xx >= x(i) .and. xx < x(i+1) )then
+			 int = 1.0* (xx - x(i)) / (x(i+1) - x(i) )
+			 exit
+			 end if
+		 else
+			 if( xx <= x(i) .and. xx > x(i+1) )then
+			 int = 1.0* (xx - x(i)) / (x(i+1) - x(i) )
+			 exit
+			 end if
+		 end if
+	 end do
     coords(1) = int
     coords(2) = i
     coords(3) = ( x(i+1) - x(i) )
