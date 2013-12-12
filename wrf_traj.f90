@@ -3,7 +3,7 @@
     IMPLICIT NONE
     character (len = 999), dimension(:), allocatable :: VAR_FILE
     character (len = 499) :: windfiles(5), metafile
-    character (len =999) ::  META_FILE != "/glade/scratch/abrammer/runs/nadine_2012/run3/wrfout_d03_2012-09-06_00:00:00.nc"
+    character (len =999) ::  META_FILE 
     character (len = *), parameter :: namefile = "namelist.traj"
     character (len=*), parameter :: FMT1 = "(7F15.5)", FMT0="(7A15)"
     character (len = 25)  lat_name, lon_name, lev_name, tim_name, var_name
@@ -53,9 +53,10 @@
 
       open(1,file=namefile)
       read(1,fileio)  
-    read(1,time_opt)
-    read(1,traj_opt)
-        META_FILE =TRIM(ADJUSTL(METAFILE))
+      read(1,time_opt)
+      read(1,traj_opt)
+      
+         META_FILE =TRIM(ADJUSTL(METAFILE))
         print*, META_FILE
 
         allocate(file_times(nfiles))
