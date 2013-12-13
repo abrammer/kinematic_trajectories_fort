@@ -2,14 +2,15 @@
     USE netcdf
     IMPLICIT NONE
     character (len = 999), dimension(:), allocatable :: VAR_FILE
+    
     character (len = 499) :: windfiles(5), metafile
     character (len =999) ::  META_FILE 
     character (len = *), parameter :: namefile = "namelist.traj",  FMT1 = "(7F15.5)", FMT0="(7A15)"
     character (len = 25)  lat_name, lon_name, lev_name, tim_name, var_name
     real, dimension(:), allocatable :: lat, lon, lev, time, file_times
     real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
-	real start_time, start_lon, start_lat, start_lev, end_time
-	real t2, t1,  filetimes(99), outmin
+    real start_time, start_lon, start_lat, start_lev, end_time
+    real t2, t1,  filetimes(99), outmin
     integer, parameter :: text_out = 20
     integer  meta_ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it,x,t, step, no_of_parcels
     integer nfiles,f,  ntime,mintime, maxtime, timedt
@@ -147,7 +148,7 @@ print*, "*****************************"
          call coord_2_int(file_times, time(ti+i), fi)
          call coord_2_int(time, file_times(fi(2)),  pfi)
          fti = (ti+i)-(pfi(2)-1)
-        
+
          lncid = ncid(fi(2))
          call check( nf90_inq_varid(lncid, reqvar%name, reqvar%id ) )
          call check( nf90_get_var(lncid, reqvar%id, reqvar%grid(:,:,:,1+i), (/1,1,1,fti/), (/ size(reqvar%lon),size(reqvar%lat),size(reqvar%lev),1/) ) )
@@ -269,14 +270,11 @@ print*, "*****************************"
     v0 = traj%v1
     w0 = traj%w1
 
-	! Make an initial movement with initial winds. 
+	! Make an initial movement with initial winds.
     newlocs = move_parcel(traj%u1,traj%v1,traj%w1, traj%lev, traj%lat, traj%lon)
     call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )  ! get initial guess
-!	if(.not.traj%bound)then
-!		return
-!	end if
 	! Use first guess location, and make new movement using average of winds from X0 and X1, iterate until they are the same
-    do it=1, 3		! This rarely take 3 iterations. 
+    do it=1, 3		! This rarely take 3 iterations.
 	   locs  = newlocs
 	   newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), traj%lev, traj%lat, traj%lon)
 	   call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )
@@ -327,13 +325,13 @@ print*, "*****************************"
 
 
 	REAL function torad(val)
-	REAL, PARAMETER :: pi = 3.14159265358979 
+	REAL, PARAMETER :: pi = 3.14159265358979
 	real val
     torad = val* pi/180.
     end function torad
 
     REAL function todeg(val)
-	REAL, PARAMETER :: pi = 3.14159265358979 
+	REAL, PARAMETER :: pi = 3.14159265358979
 	real val
     todeg = val* 180./pi
     end function todeg
@@ -433,7 +431,7 @@ print*, "*****************************"
         call grab_grid(reqvar, reqvar%ti+1 )
 	    tt = ( ti(2) - reqvar%ti) + 1
     end if
-	
+
     var = reqvar%grid(inds(1):inds(1)+3, inds(2):inds(2)+3, inds(3):inds(3)+3, tt)
 	!  read in bottom left - bottom right - top left -  topright
 
