@@ -1,29 +1,25 @@
-    PROGRAM read_netcdf
+    PROGRAM wrf_trajectories
     USE netcdf
     IMPLICIT NONE
     character (len = 999), dimension(:), allocatable :: VAR_FILE
     character (len = 499) :: windfiles(5), metafile
     character (len =999) ::  META_FILE 
-    character (len = *), parameter :: namefile = "namelist.traj"
-    character (len=*), parameter :: FMT1 = "(7F15.5)", FMT0="(7A15)"
+    character (len = *), parameter :: namefile = "namelist.traj",  FMT1 = "(7F15.5)", FMT0="(7A15)"
     character (len = 25)  lat_name, lon_name, lev_name, tim_name, var_name
     real, dimension(:), allocatable :: lat, lon, lev, time, file_times
-    real :: filetimes(99), outmin
+    real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
+	real start_time, start_lon, start_lat, start_lev, end_time
+	real t2, t1,  filetimes(99), outmin
     integer, parameter :: text_out = 20
     integer  meta_ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it,x,t, step, no_of_parcels
-    integer nfiles,f
+    integer nfiles,f,  ntime,mintime, maxtime, timedt
     integer, dimension(:), allocatable :: ncid
     integer, dimension(nf90_max_var_dims) :: dimIds
-    integer ntime,mintime, maxtime, timedt
-        real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
-	real start_time, start_lon, start_lat, start_lev, end_time
-	real t2, t1
         
-        namelist /fileio/metafile,nfiles, windfiles,filetimes
+    namelist /fileio/metafile,nfiles, windfiles,filetimes
 	namelist /time_opt/start_time,end_time,step,outmin, mintime,maxtime,timedt
 	namelist /traj_opt/no_of_parcels,start_lev,start_lat,start_lon
 
-    real filio_time, get4dal_time
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!! External Functions
     real bicubic_interp, neville_interp
@@ -43,6 +39,7 @@
 
     type parcel
     	real :: u1,v1,w1,u2,v2,w2, lev, lat, lon, time
+    	logical :: bound = .true.
     end type parcel
 
     type (wind) u
@@ -51,30 +48,24 @@
     type (wind) ph
     type (parcel), dimension (:), allocatable :: traj
 
-      open(1,file=namefile)
-      read(1,fileio)  
-      read(1,time_opt)
-      read(1,traj_opt)
-      
-         META_FILE =TRIM(ADJUSTL(METAFILE))
-        print*, META_FILE
+	open(1,file=namefile)
+	read(1,fileio)  
+	read(1,time_opt)
+	read(1,traj_opt)
 
-        allocate(file_times(nfiles))
-        file_times = filetimes(:nfiles)
-        print*, file_times
+	META_FILE =TRIM(ADJUSTL(METAFILE))
+    meta_ncid = open_file(META_FILE)
 
-        allocate (VAR_FILE(nfiles))
-        !VAR_FILE = trim(adjustl(windfiles(:nfiles)))
-        !print*, trim(ADJUSTL(VAR_FILE(1)))
+	allocate(file_times(nfiles))
+	file_times = filetimes(:nfiles)
 
-        allocate(ncid(nfiles))
-        do f=1,nfiles
-        VAR_FILE(f) = adjustl(windfiles(f))
-        ncid(f) = open_file(var_file(f))
-        end do
+	allocate (VAR_FILE(nfiles))
+	allocate(ncid(nfiles))
+	do f=1,nfiles
+	  VAR_FILE(f) = adjustl(windfiles(f))
+	  ncid(f) = open_file(var_file(f))
+	end do
 
-!    call check( nf90_open(VAR_FILE(1), NF90_NOWRITE, ncid) )
-    call check( nf90_open(META_FILE, NF90_NOWRITE, meta_ncid) )
 
     !var_name = "XTIME"
     !call check( nf90_inq_varid(ncid, var_name, varId ) )
@@ -99,23 +90,12 @@ print*, "*****************************"
 
 	v%name = "V"
 	call define_coords(v)
-	print*, "V Variable"
-	print*, "Longitude  (", size(v%lon),"): ",minval(v%lon),":",maxval(v%lon)
-	print*, "Latitude  (", size(v%lat),"): ",minval(v%lat),":",maxval(v%lat)
 
 	w%name = "W"
 	call define_coords(w)
-	print*, "W Variable"
-	print*, "Longitude  (", size(w%lon),"): ",minval(w%lon),":",maxval(w%lon)
-	print*, "Latitude  (", size(w%lat),"): ",minval(w%lat),":",maxval(w%lat)
 
 	ph%name = "PH"
 	call define_coords(ph)
-	print*, "PH Variable"
-	print*, "Longitude  (", size(w%lon),"): ",minval(w%lon),":",maxval(w%lon)
-	print*, "Latitude  (", size(w%lat),"): ",minval(w%lat),":",maxval(w%lat)
-
-
 
 
 !    ***********************************
@@ -137,6 +117,7 @@ print*, "*****************************"
     call grab_grid(w, int(ti(2)))
     call grab_grid(ph, int(ti(2)))
 
+
     print*, "*********************"
     call integrate_trajectory(traj, start_time, end_time)
 
@@ -150,12 +131,12 @@ print*, "*****************************"
         call check( nf90_open(fname, NF90_NOWRITE, open_file) )
         end function
 
-    subroutine update_file(ffi)
-        integer ffi
-        call check( nf90_open(VAR_FILE(ffi), NF90_NOWRITE, ncid(0)) )
-       	print*, trim(ADJUSTL(VAR_FILE(ffi)))
-
-    end subroutine
+!    subroutine update_file(ffi)
+!        integer ffi
+!        call check( nf90_open(VAR_FILE(ffi), NF90_NOWRITE, ncid(0)) )
+!       	print*, trim(ADJUSTL(VAR_FILE(ffi)))
+!
+!    end subroutine
 
 
     subroutine grab_grid(reqvar, ti)
@@ -180,10 +161,9 @@ print*, "*****************************"
 	integer varId, tId, dimids(6)
 	character (len =25) dimname, newname
 	real, dimension(:), allocatable :: lonvar, latvar
+
     call check( nf90_inq_varid(ncid(1), vari%name, vari%id ) )
     call check( nf90_inquire_variable(ncid(1), vari%id, ndims = ndim, dimids = dimids, natts = numAtts) )
-!    call check( nf90_inquire_variable(ncid, vari%id,  ) )
-	print*, dimids(:ndim)
     do i=1,ndim
 		call check( nf90_inquire_dimension(ncid(1), dimIds(i),name = dimname, len=dimlen) )
 		select case (dimname)
@@ -219,6 +199,7 @@ print*, "*****************************"
             allocate (vari%lev(dimlen))
 		end select
     end do
+    
     allocate(vari%grid( size(vari%lon), size(vari%lat), size(vari%lev),2 ) )
     if(vari%name =="PH")then
         allocate(vari%base( size(vari%lon), size(vari%lat), size(vari%lev) ) )
@@ -227,43 +208,51 @@ print*, "*****************************"
     else
        allocate(vari%base(1,1,1)  )  !! just so we don't have unallocated grids? Not sure whether this matters
     end if
+    
     print*, vari%name
 	print*, "Longitude  (", size(vari%lon),"): ",minval(vari%lon),":",maxval(vari%lon)
 	print*, "Latitude   (", size(vari%lat),"): ",minval(vari%lat),":",maxval(vari%lat)
 	return
 	end subroutine define_coords
 
-    subroutine integrate_trajectory(traj, time,end_time)
+
+    subroutine integrate_trajectory(traj, stime,end_time)
     type (parcel):: traj(:)
     real time, end_time, stime,minstep
-    integer t
+    integer t, ob
     character (len=3) :: stri
 
 	minstep = step/60D0  ! have an issue with rounding errors at the moment. 
-	stime = time
 
     do t=1,no_of_parcels
-	   call get5dval(u,v,w, time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t) )
+	   call get5dval(u,v,w, stime , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t) )
+	   if(.not.traj(t)%bound)then
+	   		ob = ob+1
+		 cycle
+	   end if
 	   write(stri,'(I3)') t
 	   open(unit=(100+t), file="traj"//trim(ADJUSTL(stri))//".txt", status="replace", action="write")
 	   write((100+t),FMT0) "TIME","LEV","LAT","LON","U","V","W"
-	   write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1, traj(t)%v1, traj(t)%w1
+	   write((100+t),FMT1)  stime , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1, traj(t)%v1, traj(t)%w1
     end do
 
+	if(ob)then
+	print*, ob,"Trajectories are not starting due to being out of bounds"
+	end if
+
    open(unit=6, carriagecontrol='fortran')
-    do while (time .lt. end_time)
-        time = time + minstep  
-		do t=1,no_of_parcels
-        		 call petterssen(u,v,w,  time ,traj(t))
-			  if( mod( time, outmin).lt.minstep )then
-				  write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1,traj(t)%v1,traj(t)%w1
-			  end if
-		  end do
-       call progress( (time-stime)/(end_time-stime)*100. )
+    do time=stime, end_time, minstep
+	   do t=1,no_of_parcels
+			if(traj(t)%bound)then
+				 call petterssen(u,v,w,  time ,traj(t))
+				 if( mod( time, outmin).lt.minstep .and. traj(t)%bound)then
+					 write((100+t),FMT1)  time , traj(t)%lev, traj(t)%lat, traj(t)%lon, traj(t)%u1,traj(t)%v1,traj(t)%w1
+				 end if
+			 end if
+		 end do
+   call progress( (time-stime)/(end_time-stime)*100. )
    end do
 
-   call cpu_time ( t2 )
-   write ( *, * ) 'Elapsed CPU time = ', t2 - t1
    end subroutine integrate_trajectory
 
 
@@ -283,12 +272,18 @@ print*, "*****************************"
 	! Make an initial movement with initial winds. 
     newlocs = move_parcel(traj%u1,traj%v1,traj%w1, traj%lev, traj%lat, traj%lon)
     call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )  ! get initial guess
-	
+!	if(.not.traj%bound)then
+!		return
+!	end if
 	! Use first guess location, and make new movement using average of winds from X0 and X1, iterate until they are the same
     do it=1, 3		! This rarely take 3 iterations. 
 	   locs  = newlocs
 	   newlocs = move_parcel(0.5*(u0+traj%u1),0.5*(v0+traj%v1),0.5*(w0+traj%w1), traj%lev, traj%lat, traj%lon)
 	   call get5dval(u,v,w, in_time, newlocs(1), newlocs(2), newlocs(3), traj )
+!	   	if(.not.traj%bound)then
+!		   return
+!	   end if
+
 	   if(maxval(abs(locs - newlocs)).le.converg)then 	! check for convergence.
 		  exit
 	   end if
@@ -311,7 +306,7 @@ print*, "*****************************"
     REAL :: dir, rdist, adj , newlat, newlon, time_step, newlev, lev_in          ! Direction, radial distance, backward/forward switch
 
     time_step = step
-    adj = 1.
+    adj = -1.
 
 	rdist = SQRT( Vu**2.0+Vv**2.0 )*(adj*time_step/radius)      ! is adj needed?
     dir = pi+ATAN2( adj*-1.0*Vu, adj*-1.0*Vv )
@@ -351,15 +346,21 @@ print*, "*****************************"
 	real linear_interp
 
 	call coord_2_int(time, in_time, ti)
-	call get_levels(u,v,w, time(ti(2)), lat, lon)
-	traj%u1 = get4dval(u, time(ti(2)), lev, lat, lon)
-	traj%v1 = get4dval(v, time(ti(2)),lev, lat, lon)
-	traj%w1 = get4dval(w, time(ti(2)), lev, lat, lon)
+	if(.not.get_levels(u,v,w, time(ti(2)), lat, lon))then
+	  traj%bound = .false.
+	  return
+	end if
+	traj%u1 = get4dval(u, time(ti(2)), lev, lat, lon, traj%bound)
+	traj%v1 = get4dval(v, time(ti(2)),lev, lat, lon, traj%bound)
+	traj%w1 = get4dval(w, time(ti(2)), lev, lat, lon, traj%bound)
 	if(ti(1).ne.0)then  ! if we're exactly on a data time, may as well take it. 
-	  call get_levels(u,v,w, time(ti(2)+1), lat, lon)
-	  traj%u2 = get4dval(u, time(ti(2)+1),lev, lat, lon)
-	  traj%v2 = get4dval(v, time(ti(2)+1),lev, lat, lon)
-	  traj%w2 = get4dval(w, time(ti(2)+1),lev, lat, lon)
+	  if(.not.get_levels(u,v,w, time(ti(2)+1), lat, lon))then
+		traj%bound = .false.
+		return
+	  end if
+	  traj%u2 = get4dval(u, time(ti(2)+1),lev, lat, lon, traj%bound)
+	  traj%v2 = get4dval(v, time(ti(2)+1),lev, lat, lon, traj%bound)
+	  traj%w2 = get4dval(w, time(ti(2)+1),lev, lat, lon, traj%bound)
 	  traj%u1 = linear_interp( traj%u1, traj%u2, ti(1) )
 	  traj%v1 = linear_interp( traj%v1, traj%v2, ti(1) )
 	  traj%w1 = linear_interp( traj%w1, traj%w2, ti(1) )
@@ -368,22 +369,28 @@ print*, "*****************************"
 
 
 
-	subroutine get_levels(u,v,w, in_time, in_lat, in_lon)
+	logical function get_levels(u,v,w, in_time, in_lat, in_lon)
 	type (wind) u,v,w
 	real, parameter :: g=9.81
 	real loni(3), lati(3),  in_lat, in_lon, in_time, t2, t1
 	real :: define_levels(4,4,51)
 	real :: profile(51), ustag_lev(50)
-	integer inds(4), l, i, tt
+	integer inds(2), l, i, tt
 	integer varId, tId, coords(2), ndim
 	character (len =25) dimname, newname
 	real bicubic_interp, neville_interp
-
+	get_levels = .true.
+	
      call coord_2_int(time, in_time, ti)
      call coord_2_int(ph%lat, in_lat, lati)
      call coord_2_int(ph%lon, in_lon,loni)
 
-     inds = int( (/loni(2)-1, lati(2)-1, 1, ti(2) /) )
+     inds = int( (/loni(2)-1, lati(2)-1/) )
+	  if(any(inds.le.0) .or. (inds(1).ge.size(ph%lon)-2) .or. (inds(2).ge.size(ph%lat)-2) )then
+		get_levels = .false.
+		return
+	  end if
+
      tt = ( ti(2) - ph%ti) + 1
      if(tt.gt.2)then
          call grab_grid(ph, ph%ti+1 )
@@ -399,13 +406,14 @@ print*, "*****************************"
 	 ustag_lev =  (profile(2:dimlen) + profile(1:dimlen-1) )/ 2.
 	 u%lev = ustag_lev
 	 v%lev = ustag_lev
-    end subroutine get_levels
+    end function get_levels
 
 
-	real function get4dval( reqvar, in_time, in_lev, in_lat, in_lon)
+	real function get4dval( reqvar, in_time, in_lev, in_lat, in_lon, bound)
 	real ti(3), levi(3), loni(3), lati(3),in_time,in_lev, in_lat, in_lon
 	real pro1(4), var(4,4,4), t1, t2
 	integer inds(4), ninds(4), tt
+	logical bound
 	type (wind) reqvar
 	real bicubic_interp, neville_interp
 
@@ -415,6 +423,11 @@ print*, "*****************************"
     call coord_2_int(reqvar%lat, in_lat,loni)
 
     inds = int( (/loni(2)-1, lati(2)-1, levi(2)-1, ti(2) /) )
+	  if(any(inds.le.0) .or. (inds(1).ge.size(reqvar%lon)-2) .or. (inds(2).ge.size(reqvar%lat)-2).or. (inds(3).ge.size(reqvar%lev)-2) )then
+		bound = .false.
+		return
+	  end if
+    
     tt = ( ti(2) - reqvar%ti) + 1
     if(tt.gt.2)then
         call grab_grid(reqvar, reqvar%ti+1 )
