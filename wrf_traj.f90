@@ -19,7 +19,7 @@
         
     namelist /fileio/metafile,nfiles, windfiles,filetimes
 	namelist /time_opt/start_time,end_time,step,outmin, mintime,maxtime,timedt
-	namelist /traj_opt/no_of_parcels,start_lev,start_lat,start_lon
+	namelist /traj_opt/no_of_parcels,start_lev,start_lat,start_lon, dy, dx, dl, ny,nx,nl
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!! External Functions
@@ -102,12 +102,28 @@ print*, "*****************************"
 !    ***********************************
 !   starting point
 
+!    allocate( traj(no_of_parcels) )
+!    do t=1,no_of_parcels
+!       traj(t)%lat = start_lat
+!       traj(t)%lev = start_lev+(t*400)
+!       traj(t)%lon = start_lon
+!    end do
+!
+
+	print*, no_of_parcels, nx*ny*nl
     allocate( traj(no_of_parcels) )
-    do t=1,no_of_parcels
-       traj(t)%lat = start_lat
-       traj(t)%lev = start_lev+(t*400)
-       traj(t)%lon = start_lon
+    t=1
+    do sx=1, nx
+    do sy=1, ny
+    do sl=1, nl
+       traj(t)%lat = start_lat+(sy*dy)
+       traj(t)%lev = start_lev+(sl*dl)
+       traj(t)%lon = start_lon+(sx*dx)
+	   t=t+1
     end do
+    end do
+    end do
+
 
     print*, "Starting", no_of_parcels," trajectories"
 

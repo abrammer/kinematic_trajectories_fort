@@ -19,8 +19,15 @@ timedt=5
 /
 
 &traj_opt 
-no_of_parcels=20
-start_lev = -431.0,
-start_lat=29.74,
-start_lon = -25.3
+no_of_parcels=100
+start_lev = 100.0,
+dl=500,
+nl=10,
+start_lat=  29.74,
+dy = 0.5,
+ny = 10,
+start_lon = -25.3,
+dx=0.5,
+nx = 10,
+
 /
