@@ -27,6 +27,11 @@
     integer istat
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!  Lets get Rolling.
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!! Define types for 4d grids, containing their own metadata
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     type wind
     	real :: val1, val2, val
     	real, dimension(:), allocatable :: lat
@@ -38,22 +43,33 @@
     	integer :: id, y_stag, ti
     end type wind
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!! Define types each separate trajectory
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     type parcel
     	real :: u1,v1,w1,u2,v2,w2, lev, lat, lon, time
     	logical :: bound = .true.
     end type parcel
 
-    type (wind) u
-    type (wind) v
-    type (wind) w
-    type (wind) ph
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!! Initialise 4d grids and trajectory variables. 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    type (wind) :: u,v,w,ph
     type (parcel), dimension (:), allocatable :: traj
 
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!! Read the namelist file. 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	open(1,file=namefile)
 	read(1,fileio)  
 	read(1,time_opt)
 	read(1,traj_opt)
+	
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!  Run through some initial file io
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	META_FILE =TRIM(ADJUSTL(METAFILE))
     meta_ncid = open_file(META_FILE)
 
@@ -68,6 +84,7 @@
 	end do
 
 
+
     !var_name = "XTIME"
     !call check( nf90_inq_varid(ncid, var_name, varId ) )
     !call check( nf90_inquire_variable(ncid, varId, ndims = ndim, dimids = dimIds, natts = numAtts) )
@@ -76,6 +93,11 @@
     !allocate ( time(dimlen) )
     !call check (nf90_get_var(ncid, varId, time) )
 
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!  Run through coordinate definition info. 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!! Messy time coordinate definitions. 
      ntime = ( (maxtime-mintime)/timedt )+ 1
      print*, ntime
      allocate(time(ntime))
@@ -83,6 +105,8 @@
         time(t+1) = mintime+ (t*timedt)
      end do
         print*, time(ntime)
+        
+        
 !    ***********************************
 !    define dimensions
 print*, "*****************************"
@@ -110,18 +134,21 @@ print*, "*****************************"
 !    end do
 !
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!  Initialise trajectories. 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	print*, no_of_parcels, nx*ny*nl
     allocate( traj(no_of_parcels) )
     t=1
     do sx=1, nx
-    do sy=1, ny
-    do sl=1, nl
-       traj(t)%lat = start_lat+(sy*dy)
-       traj(t)%lev = start_lev+(sl*dl)
-       traj(t)%lon = start_lon+(sx*dx)
-	   t=t+1
-    end do
-    end do
+	  do sy=1, ny
+		do sl=1, nl
+		   traj(t)%lat = start_lat+(sy*dy)
+		   traj(t)%lev = start_lev+(sl*dl)
+		   traj(t)%lon = start_lon+(sx*dx)
+		   t=t+1
+		end do
+	  end do
     end do
 
 
@@ -139,7 +166,13 @@ print*, "*****************************"
     call integrate_trajectory(traj, start_time, end_time)
 
 
-
+!***********
+!***********
+!***********
+! All functions  below 
+!***********
+!***********
+!***********
 
 	contains
 
@@ -147,13 +180,6 @@ print*, "*****************************"
         character (len=*) fname
         call check( nf90_open(fname, NF90_NOWRITE, open_file) )
         end function
-
-!    subroutine update_file(ffi)
-!        integer ffi
-!        call check( nf90_open(VAR_FILE(ffi), NF90_NOWRITE, ncid(0)) )
-!       	print*, trim(ADJUSTL(VAR_FILE(ffi)))
-!
-!    end subroutine
 
 
     subroutine grab_grid(reqvar, ti)
