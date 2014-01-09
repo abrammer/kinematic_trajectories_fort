@@ -10,10 +10,10 @@
     real, dimension(:), allocatable :: lat, lon, lev, time, file_times
     real ti(3), li(3), loni(3),lati(3), var(4,4,4), pro1(4), val
     real start_time, start_lon, start_lat, start_lev, end_time
-    real t2, t1,  filetimes(99), outmin
+    real t2, t1,  filetimes(99), outmin, dx,dy,dl
     integer, parameter :: text_out = 20
     integer  meta_ncid, varId, dimId, ndim, dimlen, uId, inds(4), ninds(4),i, numAtts, it,x,t, step, no_of_parcels
-    integer nfiles,f,  ntime,mintime, maxtime, timedt
+    integer nfiles,f,  ntime,mintime, maxtime, timedt,ny,nx,nl,sz,sy,sl
     integer, dimension(:), allocatable :: ncid
     integer, dimension(nf90_max_var_dims) :: dimIds
         
