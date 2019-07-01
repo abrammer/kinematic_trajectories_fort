@@ -1,0 +1,33 @@
+&fileio
+metafile="/glade/scratch/abrammer/runs/nadine_2012/run3/wrfout_d03_2012-09-06_00:00:00.nc",
+nfiles=3,
+windfiles=
+"/glade/scratch/abrammer/runs/nadine_2012/run3/wind_d03_2012-09-06_00:00:00.nc",
+"/glade/scratch/abrammer/runs/nadine_2012/run3/wind_d03_2012-09-06_01:00:00.nc",
+"/glade/scratch/abrammer/runs/nadine_2012/run3/wind_d03_2012-09-06_02:00:00.nc",
+filetimes=0,60,120
+/
+
+&time_opt 
+start_time=40, 
+end_time=130, 
+step=15,
+outmin=10
+mintime=0
+maxtime=175
+timedt=5
+/
+
+&traj_opt 
+no_of_parcels=100
+start_lev = 100.0,
+dl=500,
+nl=10,
+start_lat=  29.74,
+dy = 0.5,
+ny = 10,
+start_lon = -25.3,
+dx=0.5,
+nx = 10,
+
+/
